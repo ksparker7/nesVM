@@ -1,0 +1,83 @@
+
+#[derive(Clone, Debug, Copy, PartialEq)]
+pub enum Instruction{
+    LDA(Mode),
+    LDX(Mode),
+    LDY(Mode),
+    STA(Mode),
+    STX(Mode), 
+    STY(Mode),
+    TAX(Mode),
+    TAY(Mode),
+    TXA(Mode),    
+    TYA(Mode),
+    TSX(Mode), //
+    TXS(Mode),
+    PHA(Mode),
+    PHP(Mode),
+    PLA(Mode),
+    PLP(Mode),
+    AND(Mode),
+    EOR(Mode),
+    ORA(Mode),
+    BIT(Mode),
+    ADC(Mode),
+    SBC(Mode),
+    CMP(Mode),
+    CPX(Mode),
+    CPY(Mode),
+    INC(Mode),
+    INX(Mode),
+    INY(Mode),
+    DEC(Mode),
+    DEX(Mode),
+    DEY(Mode),
+    ASL(Mode),
+    LSR(Mode),
+    ROL(Mode),
+    ROR(Mode),
+    JMP(Mode),
+    JSR(Mode),
+    RTS(Mode),
+    BCC(Mode),
+    BCS(Mode),
+    BEQ(Mode),
+    BMI(Mode),
+    BNE(Mode),
+    BPL(Mode),
+    BVC(Mode),
+    BVS(Mode),
+    CLC(Mode),
+    CLD(Mode),
+    CLI(Mode),
+    CLV(Mode),
+    SEC(Mode),
+    SED(Mode),
+    SEI(Mode),
+    BRK(Mode),
+    NOP(Mode),
+    RTI(Mode),    
+}
+
+#[derive(Clone, Debug, Copy, PartialEq)]
+pub enum Mode{
+    Implicit,
+    Accumulator,
+    Immediate,
+    ZeroPage,
+    ZeroPageX,
+    ZeroPageY,
+    Relative,
+    Absolute,
+    AbsoluteX,
+    AbsoluteY,
+    Indirect,
+    IndirectX,
+    IndirectY,
+}
+
+
+
+
+
+
