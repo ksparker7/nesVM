@@ -118,8 +118,6 @@ mod cpuTests{
 
     #[test] 
     fn testLda(){
-        let f = File::open("/home/kai/Projects/nesVM/src/files/mario.nes").expect("File could not open");
-        let mut cpu = CPU::new(f); 
         assert_eq!(true, testIndividualInstruction(vec![0xa9, 0b1010_1010], 
                                                    Instruction::LDA(Mode::Immediate), 
                                                    vec![],
@@ -180,8 +178,6 @@ mod cpuTests{
 
     #[test] 
     fn testLdx(){
-        let f = File::open("/home/kai/Projects/nesVM/src/files/mario.nes").expect("File could not open");
-        let mut cpu = CPU::new(f); 
         assert_eq!(true, testIndividualInstruction(vec![0xa2, 0b1010_1010], 
                                                    Instruction::LDX(Mode::Immediate), 
                                                    vec![],
@@ -221,8 +217,6 @@ mod cpuTests{
    }
     #[test] 
     fn testLdy(){
-        let f = File::open("/home/kai/Projects/nesVM/src/files/mario.nes").expect("File could not open");
-        let mut cpu = CPU::new(f); 
         assert_eq!(true, testIndividualInstruction(vec![0xa0, 0b1010_1010], 
                                                    Instruction::LDY(Mode::Immediate), 
                                                    vec![],
@@ -258,7 +252,103 @@ mod cpuTests{
                                                    vec![],
                                                    Answers{PC:3, SP:0, A:0, X:0x10, Y:0x44, Flags:0}));
 
+   }
+    #[test] 
+    fn testSta(){
+        //stores 0x50 at address 0x15
+        assert_eq!(true, testIndividualInstruction(vec![0x85, 0x15], 
+                                                   Instruction::STA(Mode::ZeroPage),
+                                                   vec![],
+                                                   Registers{PC:0, SP:0, A:0x50, X:0, Y:0, Flags:0},
+                                                   vec![Data{address: 0x15, value: 0x50}],
+                                                   Answers{PC:2, SP:0, A:0x50, X:0, Y:0, Flags:0}));
+
+        //stores 0x50 at address 0x15+5 register
+        assert_eq!(true, testIndividualInstruction(vec![0x95, 0x15], 
+                                                   Instruction::STA(Mode::ZeroPageX),
+                                                   vec![],
+                                                   Registers{PC:0, SP:0, A:0x50, X:0x5, Y:0, Flags:0},
+                                                   vec![Data{address: 0x1a, value: 0x50}],
+                                                   Answers{PC:2, SP:0, A:0x50, X:0x5, Y:0, Flags:0}));
+
+        //stores 0x50 at address 0x1234
+        assert_eq!(true, testIndividualInstruction(vec![0x8D, 0x34, 0x12], 
+                                                   Instruction::STA(Mode::Absolute),
+                                                   vec![],
+                                                   Registers{PC:0, SP:0, A:0x50, X:0, Y:0, Flags:0},
+                                                   vec![Data{address: 0x1234, value: 0x50}],
+                                                   Answers{PC:3, SP:0, A:0x50, X:0, Y:0, Flags:0}));
+
+        assert_eq!(true, testIndividualInstruction(vec![0x9D, 0x34, 0x12], 
+                                                   Instruction::STA(Mode::AbsoluteX),
+                                                   vec![],
+                                                   Registers{PC:0, SP:0, A:0x50, X:0x5, Y:0, Flags:0},
+                                                   vec![Data{address: 0x1239, value: 0x50}],
+                                                   Answers{PC:3, SP:0, A:0x50, X:0x5, Y:0, Flags:0}));
 
    }
+    #[test] 
+    fn testTax(){
+        assert_eq!(true, testIndividualInstruction(vec![0xAA], 
+                                                   Instruction::TAX(Mode::Implicit),
+                                                   vec![],
+                                                   Registers{PC:0, SP:0, A:0x50, X:0, Y:0, Flags:0},
+                                                   vec![],
+                                                   Answers{PC:1, SP:0, A:0x50, X:0x50, Y:0, Flags:0})); 
+    }
+    #[test] 
+    fn testPHA(){
+        assert_eq!(true, testIndividualInstruction(vec![0x48], 
+                                                   Instruction::PHA(Mode::Implicit),
+                                                   vec![],
+                                                   Registers{PC:0, SP:0x10, A:0x50, X:0, Y:0, Flags:0},
+                                                   vec![Data{address:0x0110,value:0x50}],
+                                                   Answers{PC:1, SP:0x11, A:0x50, X:0, Y:0, Flags:0})); 
+    }
+    #[test] 
+    fn testPLA(){
+        assert_eq!(true, testIndividualInstruction(vec![0x68], 
+                                                   Instruction::PLA(Mode::Implicit),
+                                                   vec![Data{address:0x0111,value:0x50}],
+                                                   Registers{PC:0, SP:0x11, A:0, X:0, Y:0, Flags:0},
+                                                   vec![],
+                                                   Answers{PC:1, SP:0x10, A:0x50, X:0, Y:0, Flags:0})); 
+    }
+ #[test] 
+    fn testAND(){
+        assert_eq!(true, testIndividualInstruction(vec![0x29,0b0000_0110], 
+                                                   Instruction::AND(Mode::Immediate),
+                                                   vec![],
+                                                   Registers{PC:0, SP:0x0, A:0b0000_1111, X:0, Y:0, Flags:0},
+                                                   vec![],
+                                                   Answers{PC:2, SP:0, A:0b0000_0110, X:0, Y:0, Flags:0})); 
+    }
+    #[test] 
+    fn testBIT(){
+        assert_eq!(true, testIndividualInstruction(vec![0x24,0x20], 
+                                                   Instruction::BIT(Mode::ZeroPage),
+                                                   vec![Data{address: 0x20, value: 0b0110_0000}],
+                                                   Registers{PC:0, SP:0x0, A:0b0110_0000, X:0, Y:0, Flags:0},
+                                                   vec![],
+                                                   Answers{PC:2, SP:0, A:0b0110_0000, X:0, Y:0, Flags:0b0110_0000})); 
+    }
+    #[test] 
+    fn testADC(){
+        assert_eq!(true, testIndividualInstruction(vec![0x69,0x20], 
+                                                   Instruction::ADC(Mode::Immediate),
+                                                   vec![Data{address: 0x20, value: 0b0000_1111}],
+                                                   Registers{PC:0, SP:0x0, A:0b0001_0000, X:0, Y:0, Flags:0},
+                                                   vec![],
+                                                   Answers{PC:2, SP:0, A:0b0001_0000, X:0, Y:0, Flags:0})); 
+        //test overflow
+        assert_eq!(true, testIndividualInstruction(vec![0x69,0x20], 
+                                                   Instruction::ADC(Mode::Immediate),
+                                                   vec![Data{address: 0x20, value: 0b0000_1111}],
+                                                   Registers{PC:0, SP:0x0, A:0b0001_0000, X:0, Y:0, Flags:0},
+                                                   vec![],
+                                                   Answers{PC:2, SP:0, A:0b0001_0000, X:0, Y:0, Flags:0})); 
+    }
+
+
 }
 

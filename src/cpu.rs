@@ -94,7 +94,7 @@ impl CPU{
         self.registers.Flags = self.registers.Flags | 0b0001_0000;
     }
 
-    fn setOverflowFlag(&mut self){
+    fn setOverflowFlag(&mut self, f: bool){
         self.registers.Flags = self.registers.Flags | 0b0010_0000;
     }
 
@@ -327,22 +327,21 @@ impl CPU{
         return (high << 8) | (low as u16)
     }    
     //calls the mode specific function depending on whatever mode is passed
-    fn modeHandler(&mut self, mode : Mode) -> u8{
+    fn modeHandler(&mut self, mode : Mode) -> u16{
         match mode {
             Mode::Implicit	  => return 0,
             Mode::Accumulator => return 0,
-            Mode::Immediate	  => self.ImmediateHandler(),
-            Mode::ZeroPage	  => self.ZeroPageHandler(),
-            Mode::ZeroPageX	  => self.ZeroPageXHandler(),
-            Mode::ZeroPageY	  => self.ZeroPageYHandler(),
+            Mode::ZeroPage	  => self.ZeroPageHandler()  ,
+            Mode::ZeroPageX	  => self.ZeroPageXHandler() ,
+            Mode::ZeroPageY	  => self.ZeroPageYHandler() ,
             //remember to cast as i8 since only used in branch operations
-            Mode::Relative	  => self.RelativeHandler(),
-            Mode::Absolute	  => self.AbsoluteHandler(),
-            Mode::AbsoluteX	  => self.AbsoluteXHandler(),
-            Mode::AbsoluteY	  => self.AbsoluteYHandler(),
+            Mode::Relative	  => self.RelativeHandler()  ,
+            Mode::Absolute	  => self.AbsoluteHandler()  ,
+            Mode::AbsoluteX	  => self.AbsoluteXHandler() ,
+            Mode::AbsoluteY	  => self.AbsoluteYHandler() ,
             //Mode::Indirect	  => self.IndirectHandler(),
-            Mode::IndirectX	  => self.IndirectXHandler(),
-            Mode::IndirectY	  => self.IndirectYHandler(),
+            Mode::IndirectX	  => self.IndirectXHandler() ,
+            Mode::IndirectY	  => self.IndirectYHandler() ,
             _           =>{
                 return 0xff
             }
@@ -353,111 +352,231 @@ impl CPU{
         self.readByte()
     }      
     //reads byte at memory address specified
-    fn ZeroPageHandler(&mut self) -> u8{
+    fn ZeroPageHandler(&mut self) -> u16{
         let mut next = self.readByte();
-        self.memory.memoryReadByte(next as u16)
+        next as u16
     }
-    fn ZeroPageXHandler(&mut self) -> u8{
+    fn ZeroPageXHandler(&mut self) -> u16{
         let mut next = self.readByte() as u16;
-        return self.memory.memoryReadByte(next.wrapping_add(self.registers.X as u16))
+        next.wrapping_add(self.registers.X as u16)
     }
-    fn ZeroPageYHandler(&mut self) -> u8{
+    fn ZeroPageYHandler(&mut self) -> u16{
         let mut next = self.readByte() as u16;
-        return self.memory.memoryReadByte(next.wrapping_add(self.registers.Y as u16))
+        next.wrapping_add(self.registers.Y as u16)
     }
-    fn RelativeHandler(&mut self) -> u8{
-        self.readByte()
+    fn RelativeHandler(&mut self) -> u16{
+        self.readByte() as u16
     }
-    fn AbsoluteHandler(&mut self) -> u8{
+    fn AbsoluteHandler(&mut self) -> u16{
         let mut next = self.readShort();
-        self.memory.memoryReadByte(next)
+        next
     }
     
-    fn AbsoluteXHandler(&mut self) -> u8{
+    fn AbsoluteXHandler(&mut self) -> u16{
         let next = self.readShort();
         let low  = ((next & 0x00ff) as u8).wrapping_add(self.registers.X);
         let high = (next >> 8) as u8;
-        self.memory.memoryReadByte((high as u16) << 8 | (low as u16))
+        (high as u16) << 8 | (low as u16)
         
     }
-    fn AbsoluteYHandler(&mut self) -> u8{
+    fn AbsoluteYHandler(&mut self) -> u16{
         let next = self.readShort();
         let low  = ((next & 0x00ff) as u8).wrapping_add(self.registers.Y);
         let high = (next >> 8) as u8;
-        self.memory.memoryReadByte((high as u16) << 8 | (low as u16))
+        (high as u16) << 8 | (low as u16)
     }
     fn IndirectHandler(&mut self){
         
     }
-    fn IndirectXHandler(&mut self) -> u8{        
+    fn IndirectXHandler(&mut self) -> u16{        
         //get byte + X as index
         let mut index = self.readByte().wrapping_add(self.registers.X);
         //get the short at memory byte+X and store in memVal
         let memVal = self.memory.memoryReadShort(index as u16);
-        self.memory.memoryReadByte(memVal)
+        memVal
         
     }
-    fn IndirectYHandler(&mut self) -> u8{
+    fn IndirectYHandler(&mut self) -> u16{
         //get byte
         let mut index = self.readByte();
         //get the short at memory byte and add Y to it
         let memVal = self.memory.memoryReadShort(index as u16).wrapping_add(self.registers.Y as u16);
-        self.memory.memoryReadByte(memVal)
+        memVal
     }
+
     fn LDA(&mut self, mode: Mode){
         //reads 1 or two bytes
-        let val = self.modeHandler(mode);
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address),};
         self.registers.A = val;
         self.setZeroFlag(val);
         self.setNegativeFlag(val);
     } 
     fn LDX(&mut self, mode: Mode){ 
-        let val = self.modeHandler(mode);
-        self.registers.X = val+;
-        self.setZeroFlag(val);
-        self.setNegativeFlag(val);
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address),};
+        self.registers.X = val as u8;
+        self.setZeroFlag(val as u8);
+        self.setNegativeFlag(val as u8);
     } 
     fn LDY(&mut self, mode: Mode){
-        let val = self.modeHandler(mode);
-        self.registers.Y = val;
-        self.setZeroFlag(val);
-        self.setNegativeFlag(val);
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address),};
+        self.registers.Y = val as u8;
+        self.setZeroFlag(val as u8);
+        self.setNegativeFlag(val as u8);
     } 
     fn STA(&mut self, mode: Mode){ 
+        let address = self.modeHandler(mode);
+        self.memory.memoryWriteByte(address, self.registers.A);
     } 
     fn STX(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        self.memory.memoryWriteByte(address, self.registers.X);
     } 
     fn STY(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        self.memory.memoryWriteByte(address, self.registers.Y);
     } 
     fn TAX(&mut self, mode: Mode){
+        self.registers.X = self.registers.A;
+        self.setZeroFlag(self.registers.X);
+        self.setNegativeFlag(self.registers.X);
     } 
     fn TAY(&mut self, mode: Mode){
+        self.registers.Y = self.registers.A;
+        self.setZeroFlag(self.registers.Y);
+        self.setNegativeFlag(self.registers.Y);
     } 
     fn TXA(&mut self, mode: Mode){
+        self.registers.A = self.registers.X;
+        self.setZeroFlag(self.registers.A);
+        self.setNegativeFlag(self.registers.A);
     } 
     fn TYA(&mut self, mode: Mode){
+        self.registers.A = self.registers.Y;
+        self.setZeroFlag(self.registers.A);
+        self.setNegativeFlag(self.registers.A);
     } 
     fn TSX(&mut self, mode: Mode){
+        self.registers.X = self.registers.SP;
+        self.setZeroFlag(self.registers.X);
+        self.setNegativeFlag(self.registers.X);
     } 
     fn TXS(&mut self, mode: Mode){
+        self.registers.SP = self.registers.X;
     } 
+    //pushes A register to the stack and adds 1 to SP
+    //in the nes cpu the stack starts at 0x0100 and goes to 0x1ff
+    //so it is indexed by 1 byte
     fn PHA(&mut self, mode: Mode){
+        //gets absolute address of stack pointer
+        let absoluteAddress = 0x0100 | (self.registers.SP as u16);
+        //writes register A to this stack address
+        self.memory.memoryWriteByte(absoluteAddress, self.registers.A);
+        //increment stack pointer
+        //not sure if the addition is wrapping but we will find out
+        self.registers.SP+=1;
+
     } 
     fn PHP(&mut self, mode: Mode){
+        let absoluteAddress = 0x0100 | (self.registers.SP as u16);
+        self.memory.memoryWriteByte(absoluteAddress, self.registers.Flags);
+        self.registers.SP+=1;
     } 
     fn PLA(&mut self, mode: Mode){
+        let absoluteAddress = 0x0100 | (self.registers.SP as u16);
+        self.registers.A = self.memory.memoryReadByte(absoluteAddress);
+        self.registers.SP-=1;
+
+        self.setZeroFlag(self.registers.A);
+        self.setNegativeFlag(self.registers.A);     
     } 
     fn PLP(&mut self, mode: Mode){
+        let absoluteAddress = 0x0100 | (self.registers.SP as u16);
+        self.registers.Flags = self.memory.memoryReadByte(absoluteAddress);
+        self.registers.SP-=1;
     } 
     fn AND(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address),};
+        self.registers.A = self.registers.A & val;
+        self.setZeroFlag(self.registers.A);
+        self.setNegativeFlag(self.registers.A);
     } 
     fn EOR(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address),};
+        self.registers.A = self.registers.A ^ val;
+        self.setZeroFlag(self.registers.A);
+        self.setNegativeFlag(self.registers.A);
+       
+
     } 
     fn ORA(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address),};
+        self.registers.A = self.registers.A | val;
+        self.setZeroFlag(self.registers.A);
+        self.setNegativeFlag(self.registers.A);
     } 
+
     fn BIT(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let memVal = self.memory.memoryReadByte(address);
+        self.setZeroFlag(self.registers.A & memVal);
+
+        println!("A {:x?}", self.registers.A);
+        //if bit 6 of memVal is set then set self.registers.Flags
+        if memVal & 0b0010_0000 != 0 {
+            self.registers.Flags = self.registers.Flags | 0b0010_0000;
+        } else{
+            self.registers.Flags = self.registers.Flags & 0b1101_1111;
+        }
+
+        //if bit 7 of memVal is set then set self.registers.Flags
+        if memVal & 0b0100_0000 != 0 {
+            self.registers.Flags = self.registers.Flags | 0b0100_0000;
+        } else{
+            self.registers.Flags = self.registers.Flags & 0b1011_1111;
+        }
     } 
+
     fn ADC(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address)};
+        //adds together A, the value, and the carry bit shifted left by 8 
+        let sum: u16 = (self.registers.A as u16) + (val as u16) + ((self.registers.Flags & 0b0000_0001) as u16);
+
+        //tests if overflow occurs and sets carry flag
+        if sum > 255 {self.registers.Flags = self.registers.Flags | 0b0000_0001;}
+        else         {self.registers.Flags = self.registers.Flags & 0b1111_1110;}
+
+                
+
+        
+        if (val ^ (sum as u8)) & ((sum as u8) ^ self.registers.A) & 0x80 != 0 {
+            self.registers.Flags = self.registers.Flags | 0b0010_0000;
+        } else {
+            self.registers.Flags = self.registers.Flags | 0b1101_1111;
+        }
+        
+        println!("A val {:x?}", self.registers.A);
+        //println!("mem val {:x?}", memVal);
+        println!("sum val {:x?}", sum);
+        self.registers.A = sum as u8;
+
+
+        //sets A register to remained
+        self.registers.A = sum as u8;
+        
     } 
     fn SBC(&mut self, mode: Mode){
     } 
