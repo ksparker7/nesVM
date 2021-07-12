@@ -44,6 +44,8 @@ pub struct CPU{
     pub registers: Registers,
     pub program: Vec<u8>,
     pub memory: Memory,
+    pub STACK: u16,
+    
 }
 
 
@@ -57,6 +59,7 @@ impl CPU{
             registers: Registers::new(), 
             program: codeV,
             memory: Memory::new(0xFFFF),
+            STACK: 0x0100,
         }
     }
     pub fn reset(&mut self){
@@ -68,11 +71,16 @@ impl CPU{
        self.registers.Flags=0;
        self.memory.memory = vec![0; 0xffff];
     }
-
-    fn setCarryFlag(&mut self, val: u8){
-        self.registers.Flags = self.registers.Flags | 0b0000_0001;
+    //sets the carry flag if val is >= 0
+    fn setCarryFlag(&mut self, val:u8){
+        if val >= 0 {
+            self.registers.Flags = self.registers.Flags | 0b0000_0001;
+        } else{
+            //clear carry flag and keep everything else the same
+            self.registers.Flags = self.registers.Flags & 0b1111_1110;
+        }
     }
-
+    
     fn setZeroFlag(&mut self, val: u8){
         if val == 0 {
             self.registers.Flags = self.registers.Flags | 0b0000_0010;
@@ -326,6 +334,37 @@ impl CPU{
         self.registers.PC+=2;
         return (high << 8) | (low as u16)
     }    
+    fn stackPushByte(&mut self, value: u8){
+        //write the value to stack+SP
+        println!("stack {:x}", self.registers.SP);
+        self.memory.memoryWriteByte(self.STACK-(self.registers.SP as u16), value); 
+        //subtract 1 from the stack pointer
+        self.registers.SP = self.registers.SP.wrapping_add(1);
+        println!("value {:x}", value);
+    }
+
+    fn stackPushShort(&mut self, value: u16){
+        let hi = (value >> 8) as u8;
+        let low = (value & 0xff) as u8;
+        self.stackPushByte(hi);
+        self.stackPushByte(low);
+    }
+
+    fn stackPopByte(&mut self) -> u8{
+        //read byte from stack
+        let val = self.memory.memoryReadByte(self.STACK-(self.registers.SP as u16));
+        //add 1 to stack pointer
+        self.registers.SP = self.registers.SP.wrapping_sub(1);
+        //return popped value
+        val
+    }
+
+    fn stackPopShort(&mut self) -> u16{
+        let l = self.stackPopByte() as u16;
+        let h = self.stackPopByte() as u16; 
+        return h<<8 | l
+
+    }
     //calls the mode specific function depending on whatever mode is passed
     fn modeHandler(&mut self, mode : Mode) -> u16{
         match mode {
@@ -339,7 +378,7 @@ impl CPU{
             Mode::Absolute	  => self.AbsoluteHandler()  ,
             Mode::AbsoluteX	  => self.AbsoluteXHandler() ,
             Mode::AbsoluteY	  => self.AbsoluteYHandler() ,
-            //Mode::Indirect	  => self.IndirectHandler(),
+            Mode::Indirect	  => self.IndirectHandler(),
             Mode::IndirectX	  => self.IndirectXHandler() ,
             Mode::IndirectY	  => self.IndirectYHandler() ,
             _           =>{
@@ -385,8 +424,10 @@ impl CPU{
         let high = (next >> 8) as u8;
         (high as u16) << 8 | (low as u16)
     }
-    fn IndirectHandler(&mut self){
-        
+    fn IndirectHandler(&mut self) ->u16{
+        let next = self.readShort();
+        self.memory.memoryReadShort(next)
+       
     }
     fn IndirectXHandler(&mut self) -> u16{        
         //get byte + X as index
@@ -469,7 +510,7 @@ impl CPU{
     fn TXS(&mut self, mode: Mode){
         self.registers.SP = self.registers.X;
     } 
-    //pushes A register to the stack and adds 1 to SP
+    //pushes A register to the stack and subs 1 from SP
     //in the nes cpu the stack starts at 0x0100 and goes to 0x1ff
     //so it is indexed by 1 byte
     fn PHA(&mut self, mode: Mode){
@@ -477,20 +518,21 @@ impl CPU{
         let absoluteAddress = 0x0100 | (self.registers.SP as u16);
         //writes register A to this stack address
         self.memory.memoryWriteByte(absoluteAddress, self.registers.A);
-        //increment stack pointer
-        //not sure if the addition is wrapping but we will find out
-        self.registers.SP+=1;
+        //DECREMENTS stack pointer
+        //not sure if the subtraction is wrapping but we will find out
+        self.registers.SP = self.registers.SP.wrapping_sub(1);
 
     } 
     fn PHP(&mut self, mode: Mode){
         let absoluteAddress = 0x0100 | (self.registers.SP as u16);
         self.memory.memoryWriteByte(absoluteAddress, self.registers.Flags);
-        self.registers.SP+=1;
+        self.registers.SP = self.registers.SP.wrapping_sub(1);
     } 
+    //pull
     fn PLA(&mut self, mode: Mode){
         let absoluteAddress = 0x0100 | (self.registers.SP as u16);
         self.registers.A = self.memory.memoryReadByte(absoluteAddress);
-        self.registers.SP-=1;
+        self.registers.SP = self.registers.SP.wrapping_add(1);
 
         self.setZeroFlag(self.registers.A);
         self.setNegativeFlag(self.registers.A);     
@@ -498,7 +540,7 @@ impl CPU{
     fn PLP(&mut self, mode: Mode){
         let absoluteAddress = 0x0100 | (self.registers.SP as u16);
         self.registers.Flags = self.memory.memoryReadByte(absoluteAddress);
-        self.registers.SP-=1;
+        self.registers.SP = self.registers.SP.wrapping_add(1);
     } 
     fn AND(&mut self, mode: Mode){
         let address = self.modeHandler(mode);
@@ -552,12 +594,13 @@ impl CPU{
         let address = self.modeHandler(mode);
         let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
                                  _ => self.memory.memoryReadByte(address)};
-        //adds together A, the value, and the carry bit shifted left by 8 
+        //adds together A, the value, and the carry in bit
         let sum: u16 = (self.registers.A as u16) + (val as u16) + ((self.registers.Flags & 0b0000_0001) as u16);
+        
 
         //tests if overflow occurs and sets carry flag
-        if sum > 255 {self.registers.Flags = self.registers.Flags | 0b0000_0001;}
-        else         {self.registers.Flags = self.registers.Flags & 0b1111_1110;}
+        if sum > 0xff {self.registers.Flags = self.registers.Flags | 0b0000_0001;}
+        else          {self.registers.Flags = self.registers.Flags & 0b1111_1110;}
 
                 
 
@@ -565,88 +608,273 @@ impl CPU{
         if (val ^ (sum as u8)) & ((sum as u8) ^ self.registers.A) & 0x80 != 0 {
             self.registers.Flags = self.registers.Flags | 0b0010_0000;
         } else {
-            self.registers.Flags = self.registers.Flags | 0b1101_1111;
+            self.registers.Flags = self.registers.Flags & 0b1101_1111;
         }
         
-        println!("A val {:x?}", self.registers.A);
-        //println!("mem val {:x?}", memVal);
-        println!("sum val {:x?}", sum);
         self.registers.A = sum as u8;
-
-
-        //sets A register to remained
-        self.registers.A = sum as u8;
-        
     } 
+
     fn SBC(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address)};
+        //A-M-1+C
+        val = ((val as i8).wrapping_neg().wrapping_sub(1))as u8;
+        //adds together Add, the value, and the carry in bit
+        let sum: u16 = (self.registers.A as u16) + (val as u16) + ((self.registers.Flags & 0b0000_0001) as u16);
+        
+
+        //tests if overflow occurs and sets carry flag
+        if sum > 0xff {self.registers.Flags = self.registers.Flags | 0b0000_0001;}
+        else          {self.registers.Flags = self.registers.Flags & 0b1111_1110;}
+
+                
+
+        
+        if (val ^ (sum as u8)) & ((sum as u8) ^ self.registers.A) & 0x80 != 0 {
+            self.registers.Flags = self.registers.Flags | 0b0010_0000;
+        } else {
+            self.registers.Flags = self.registers.Flags & 0b1101_1111;
+        }
+        
+        self.registers.A = sum as u8;
     } 
+    fn compare(&mut self, mode: Mode, value: u8){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address)};
+        let result = value-val;
+        self.setCarryFlag(result);
+        self.setZeroFlag(result);
+        self.setNegativeFlag(result);
+    }
+
     fn CMP(&mut self, mode: Mode){
+        self.compare(mode, self.registers.A);
     } 
     fn CPX(&mut self, mode: Mode){
+        self.compare(mode, self.registers.X);
     } 
     fn CPY(&mut self, mode: Mode){
+        self.compare(mode, self.registers.Y);
     } 
     fn INC(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address)};
+        let result = val.wrapping_add(1);
+        self.memory.memoryWriteByte(address,result);
+        self.setZeroFlag(result);
+        self.setNegativeFlag(result);
     } 
     fn INX(&mut self, mode: Mode){
+        self.registers.X.wrapping_add(1);
+        self.setZeroFlag(self.registers.X);
+        self.setNegativeFlag(self.registers.X);
     } 
     fn INY(&mut self, mode: Mode){
+        self.registers.Y.wrapping_add(1);
+        self.setZeroFlag(self.registers.Y);
+        self.setNegativeFlag(self.registers.Y);
     } 
     fn DEC(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Immediate => self.ImmediateHandler(),
+                                 _ => self.memory.memoryReadByte(address)};
+        let result = val.wrapping_sub(1);
+        self.memory.memoryWriteByte(address,result);
+        self.setZeroFlag(result);
+        self.setNegativeFlag(result);
     } 
     fn DEX(&mut self, mode: Mode){
+        self.registers.X.wrapping_sub(1);
+        self.setZeroFlag(self.registers.X);
+        self.setNegativeFlag(self.registers.X);
     } 
     fn DEY(&mut self, mode: Mode){
+        self.registers.Y.wrapping_sub(1);
+        self.setZeroFlag(self.registers.Y);
+        self.setNegativeFlag(self.registers.Y);
     } 
     fn ASL(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Accumulator => self.registers.A,
+                                 _ => self.memory.memoryReadByte(address)};
+        //set carry bit to the 7th bit of val
+        let result = val << 1;
+        if (val >> 7) == 1 {self.registers.Flags=self.registers.Flags | 0b0000_0001;}
+        else               {self.registers.Flags=self.registers.Flags & 0b1111_1110;}
+        
+        match mode {
+            Mode::Accumulator => self.registers.A = result,
+            _                 => self.memory.memoryWriteByte(address,result),
+        }
+
+        self.setZeroFlag(result);
+        self.setNegativeFlag(result);
+        
     } 
     fn LSR(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Accumulator => self.registers.A,
+                                 _ => self.memory.memoryReadByte(address)};
+        //set carry bit to the 7th bit of val
+        let result = val >> 1;
+        if (val & 0b0000_0001) == 1 {self.registers.Flags=self.registers.Flags | 0b0000_0001;}
+        else                        {self.registers.Flags=self.registers.Flags & 0b1111_1110;}
+        
+        match mode {
+            Mode::Accumulator => self.registers.A = result,
+            _                 => self.memory.memoryWriteByte(address,result),
+        }
+
+        self.setZeroFlag(result);
+        self.setNegativeFlag(result);
     } 
     fn ROL(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Accumulator => self.registers.A,
+                                 _ => self.memory.memoryReadByte(address)};
+        let oldCarry = self.registers.Flags & 0b0000_0001;
+
+        //set carry bit to the 7th bit of val
+        let mut result = val << 1;
+        if (val >> 7) == 1 {self.registers.Flags=self.registers.Flags | 0b0000_0001;}
+        else               {self.registers.Flags=self.registers.Flags & 0b1111_1110;}
+         
+        result = result | oldCarry;
+        
+        match mode {
+            Mode::Accumulator => self.registers.A = result,
+            _                 => self.memory.memoryWriteByte(address,result),
+        }
+
+        self.setZeroFlag(result);
+        self.setNegativeFlag(result);
+       
     } 
     fn ROR(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        let mut val = match mode{Mode::Accumulator => self.registers.A,
+                                 _ => self.memory.memoryReadByte(address)};
+
+        let oldCarry = self.registers.Flags & 0b0000_0001;
+
+        //set carry bit to the 1st bit of val
+        let mut result = val >> 1;
+        if (val & 0b0000_0001) == 1 {self.registers.Flags=self.registers.Flags | 0b0000_0001;}
+        else                        {self.registers.Flags=self.registers.Flags & 0b1111_1110;}
+         
+        result = result | oldCarry<<7;
+        
+        match mode {
+            Mode::Accumulator => self.registers.A = result,
+            _                 => self.memory.memoryWriteByte(address,result),
+        }
+        self.setZeroFlag(result);
+        self.setNegativeFlag(result);
+
     } 
     fn JMP(&mut self, mode: Mode){
+        let address = self.modeHandler(mode);
+        //let val = self.memory.memoryReadShort(address);
+        self.registers.PC = address;
     } 
+    //pushes the current PC to the stack
+    //sets the new PC to the target memory address
     fn JSR(&mut self, mode: Mode){
+        //target memory address
+        let address = self.modeHandler(mode);
+        
+        //returnAddress equals the address of the NEXT instruction
+        self.stackPushShort(self.registers.PC-1);
+        //push the first byte of the return address onto the stack
+        
+        //set PC to absolute address
+        self.registers.PC = address;
+        
     } 
+    fn branch(&mut self, condition: bool, offset: i8){
+        if condition {self.registers.PC = self.registers.PC.wrapping_add(offset as u16);}
+    }
     fn RTS(&mut self, mode: Mode){
+        self.registers.PC = self.stackPopShort()-1;
+        println!("address {:x}", self.registers.PC);
     } 
     fn BCC(&mut self, mode: Mode){
+        let offset = self.modeHandler(mode);
+        let condition = (self.registers.Flags & 0b0000_0001) == 0;
+        self.branch(condition, offset as i8);
     } 
     fn BCS(&mut self, mode: Mode){
-    } 
-    fn BEQ(&mut self, mode: Mode){
-    } 
-    fn BMI(&mut self, mode: Mode){
+        let offset = self.modeHandler(mode);
+        let condition = (self.registers.Flags & 0b0000_0001) == 1;
+        self.branch(condition, offset as i8);
     } 
     fn BNE(&mut self, mode: Mode){
+        let offset = self.modeHandler(mode);
+        let condition = (self.registers.Flags & 0b0000_0010) == 0;
+        self.branch(condition, offset as i8);
+    } 
+    fn BEQ(&mut self, mode: Mode){
+        let offset = self.modeHandler(mode);
+        let condition = (self.registers.Flags & 0b0000_0010) == 1;
+        self.branch(condition, offset as i8);
     } 
     fn BPL(&mut self, mode: Mode){
+        let offset = self.modeHandler(mode);
+        let condition = (self.registers.Flags & 0b0100_0000) == 0;
+        self.branch(condition, offset as i8);
+    } 
+    fn BMI(&mut self, mode: Mode){
+        let offset = self.modeHandler(mode);
+        let condition = (self.registers.Flags & 0b0100_0000) == 1;
+        self.branch(condition, offset as i8);
     } 
     fn BVC(&mut self, mode: Mode){
+        let offset = self.modeHandler(mode);
+        let condition = (self.registers.Flags & 0b0010_0000) == 0;
+        self.branch(condition, offset as i8);
     } 
     fn BVS(&mut self, mode: Mode){
+        let offset = self.modeHandler(mode);
+        let condition = (self.registers.Flags & 0b0010_0000) == 1;
+        self.branch(condition, offset as i8);
     } 
     fn CLC(&mut self, mode: Mode){
+        self.registers.Flags & 0b1111_1110;
     } 
     fn CLD(&mut self, mode: Mode){
+        self.registers.Flags & 0b1111_0111;
     } 
     fn CLI(&mut self, mode: Mode){
+        self.registers.Flags & 0b1111_1011;
     } 
     fn CLV(&mut self, mode: Mode){
+        self.registers.Flags & 0b1101_1111;
     } 
     fn SEC(&mut self, mode: Mode){
+        self.registers.Flags | 0b0000_0001;
     } 
     fn SED(&mut self, mode: Mode){
+        self.registers.Flags | 0b0000_1000;
     } 
     fn SEI(&mut self, mode: Mode){
+        self.registers.Flags | 0b0000_0100;
     } 
+    
     fn BRK(&mut self, mode: Mode){
+        println!("OS SPECIFIC BREAK COMMAND NOT IMPLEMENTED");
+        //self.stackPushByte(self.registers.PC);
+        //self.stackPushByte(self.registers.Flags);
+        //self.registers.Flags | 0b0001_0000;
     } 
     fn NOP(&mut self, mode: Mode){
+        
     } 
     fn RTI(&mut self, mode: Mode){
+        self.registers.Flags = self.stackPopByte();
+        self.registers.PC = self.stackPopShort();
     }
 
     pub fn executeInstruction(&mut self, inst: Instruction) {

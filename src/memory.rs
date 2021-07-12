@@ -18,7 +18,6 @@ impl Memory{
     }
 
     pub fn memoryReadShort(&mut self, address: u16) -> u16{
-        
         let low = self.memory[address as usize] as u16; 
         let high = self.memory[(address+1) as usize] as u16;
         return (high << 8) | (low as u16)

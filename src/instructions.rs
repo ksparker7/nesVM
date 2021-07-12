@@ -11,7 +11,7 @@ pub enum Instruction{
     TAY(Mode),
     TXA(Mode),    
     TYA(Mode),
-    TSX(Mode), //
+    TSX(Mode), 
     TXS(Mode),
     PHA(Mode),
     PHP(Mode),
