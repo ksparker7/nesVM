@@ -116,6 +116,7 @@ impl CPU{
 
     pub fn fetchAndDecodeInstruction(&mut self) -> Instruction{    
         let opcode = self.readByte();
+        println!("Instruction opcode: {:x}", opcode);
         match opcode {
             //LDA
             0xA9 => return Instruction::LDA(Mode::Immediate),
@@ -336,11 +337,9 @@ impl CPU{
     }    
     fn stackPushByte(&mut self, value: u8){
         //write the value to stack+SP
-        println!("stack {:x}", self.registers.SP);
         self.memory.memoryWriteByte(self.STACK-(self.registers.SP as u16), value); 
         //subtract 1 from the stack pointer
         self.registers.SP = self.registers.SP.wrapping_add(1);
-        println!("value {:x}", value);
     }
 
     fn stackPushShort(&mut self, value: u16){
@@ -574,7 +573,6 @@ impl CPU{
         let memVal = self.memory.memoryReadByte(address);
         self.setZeroFlag(self.registers.A & memVal);
 
-        println!("A {:x?}", self.registers.A);
         //if bit 6 of memVal is set then set self.registers.Flags
         if memVal & 0b0010_0000 != 0 {
             self.registers.Flags = self.registers.Flags | 0b0010_0000;
@@ -785,11 +783,12 @@ impl CPU{
     fn JSR(&mut self, mode: Mode){
         //target memory address
         let address = self.modeHandler(mode);
-        
+        println!("address {:x}", address); 
         //returnAddress equals the address of the NEXT instruction
         self.stackPushShort(self.registers.PC-1);
         //push the first byte of the return address onto the stack
         
+        println!("pc {:x}", self.registers.PC); 
         //set PC to absolute address
         self.registers.PC = address;
         
@@ -799,7 +798,6 @@ impl CPU{
     }
     fn RTS(&mut self, mode: Mode){
         self.registers.PC = self.stackPopShort()-1;
-        println!("address {:x}", self.registers.PC);
     } 
     fn BCC(&mut self, mode: Mode){
         let offset = self.modeHandler(mode);
@@ -864,7 +862,6 @@ impl CPU{
     } 
     
     fn BRK(&mut self, mode: Mode){
-        println!("OS SPECIFIC BREAK COMMAND NOT IMPLEMENTED");
         //self.stackPushByte(self.registers.PC);
         //self.stackPushByte(self.registers.Flags);
         //self.registers.Flags | 0b0001_0000;
@@ -942,8 +939,16 @@ impl CPU{
     } 
 
     pub fn run(&mut self){
-        let inst = self.fetchAndDecodeInstruction();
-        self.executeInstruction(inst);
+        loop {
+            let inst = self.fetchAndDecodeInstruction();
+            self.executeInstruction(inst);
+        }
     }
-
+    
+    pub fn runWithCallbacak<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut CPU),
+    {
+        let ref opcodes: HashMap<u8, &
+    }
 }
