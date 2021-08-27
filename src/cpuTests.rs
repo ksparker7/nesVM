@@ -402,6 +402,13 @@ mod cpuTests{
                                                    Answers{PC:0x1, SP:0x0, A:0, X:0, Y:0, Flags:0b0000_0000})); 
 
     }
+
+    #[test] 
+    fn testNESRom(){
+        let f = File::open("/home/kai/Projects/nesVM/src/files/nestest.nes").expect("File could not open");
+        let mut cpu = CPU::new(f); 
+        cpu.run();
+    }
     #[test] 
     fn testRun(){
         let f = File::open("/home/kai/Projects/nesVM/src/files/mario.nes").expect("File could not open");

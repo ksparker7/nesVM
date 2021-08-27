@@ -19,14 +19,26 @@ use crate::memory::Memory;
 //Overflow Flag (V):          0010_0000
 //Negative Flag (N):          0100_0000
 pub struct Registers{
+    //16 bit program counter 
     pub PC: u16,
+
+    //8 bit stack pointer
     pub SP: u8,
+
+    //8 bit accumulator register
     pub A: u8,
+
+    //8 bit X register
     pub X: u8,
+
+    //8 bit Y register
     pub Y: u8,
+
+    //8 bit Flags register
     pub Flags: u8,
 }
 
+//initialize all values to 0 when new is called
 impl Registers{
     pub fn new() -> Self{
         Self{
@@ -40,12 +52,93 @@ impl Registers{
     }
 }
 
+pub struct NesHeader {
+    //4e 45 53 1a "NES" followed by MS-DOS EOF
+    pub constant: [u8;4],
+
+    //size of PRG ROM in 16KB units
+    pub prgSize: u8,
+
+    //size of CHR ROM in 8KB units
+    pub chrSize: u8,
+
+    //Flags 6 mapper, mirroring, battery, trainer
+    pub flags6: u8,
+
+    //Flags 7
+    //mapper VS/Playchoice
+    pub flags7: u8,
+
+    //Flags 8
+    //PRG ram size
+    pub flags8: u8,
+
+    //Flags 9
+    //TV system
+    pub flags9: u8,
+
+    //Flags 10
+    //TV system, PRG-RAM presence (unofficial, rarely used extension)
+    pub flags10: u8,
+
+    //padding
+    pub padding: [u8; 5]
+
+}
+
+impl NesHeader {
+    pub fn new() -> Self {
+        Self {
+            constant: [0;4],
+            prgSize : 0,
+            chrSize : 0,
+            flags6  : 0,
+            flags7  : 0,
+            flags8  : 0,
+            flags9  : 0,
+            flags10 : 0, 
+            padding : [0;5],
+        }
+    }
+    pub fn parseHeader(&mut self, header: &[u8]) {
+        self.constant[0] = header[0];
+        self.constant[1] = header[1];
+        self.constant[2] = header[2];
+        self.constant[3] = header[3];
+        self.prgSize     = header[4];
+        self.chrSize     = header[5];
+        self.flags6      = header[6]; 
+        self.flags7      = header[7]; 
+        self.flags8      = header[8]; 
+        self.flags9      = header[9]; 
+        self.flags10     = header[10]; 
+        self.padding[0] = header[11]; 
+        self.padding[1] = header[12];
+        self.padding[2] = header[13];
+        self.padding[3] = header[14];
+        self.padding[4] = header[15];
+    }
+}
+
+
+
 pub struct CPU{ 
+    //registers struct containing PC, SP, A, X, Y and Flags
     pub registers: Registers,
+
+    //vector of bytes for program
     pub program: Vec<u8>,
-    pub memory: Memory,
-    pub STACK: u16,
     
+    //Memory struct in nes systems contains 0xFFFF bytes
+    pub memory: Memory,
+
+    //16 bit stack pointer (points to the start of the stack)
+    //initialized to 0x0100
+    //accessing values of the stack is done as STACK-SP 
+    pub STACK: u16,
+
+    //nes header of the program to be read
+    pub programHeader: NesHeader,
 }
 
 
@@ -53,15 +146,24 @@ impl CPU{
     pub fn new(f: File) -> Self{
         let mut reader = BufReader::new(f);
         let mut codeV  = Vec::new();
-        
         reader.read_to_end(&mut codeV);
+
+        let mut header = NesHeader::new();
+        if codeV.len() >= 16 && codeV[0] == 0x4e && codeV[1] == 0x45
+            && codeV[2] == 0x53 && codeV[3] == 0x1a {
+                header.parseHeader(&codeV[0..16]);
+        }
+
         return Self{
             registers: Registers::new(), 
-            program: codeV,
+            program: codeV[16..].to_vec(),
             memory: Memory::new(0xFFFF),
             STACK: 0x0100,
+            programHeader: header, 
         }
     }
+
+    //reset all flags to initial values
     pub fn reset(&mut self){
        self.registers.PC=0;
        self.registers.SP=0;
@@ -71,6 +173,7 @@ impl CPU{
        self.registers.Flags=0;
        self.memory.memory = vec![0; 0xffff];
     }
+
     //sets the carry flag if val is >= 0
     fn setCarryFlag(&mut self, val:u8){
         if val >= 0 {
@@ -80,7 +183,7 @@ impl CPU{
             self.registers.Flags = self.registers.Flags & 0b1111_1110;
         }
     }
-    
+    //sets the Zero flag if val is 0    
     fn setZeroFlag(&mut self, val: u8){
         if val == 0 {
             self.registers.Flags = self.registers.Flags | 0b0000_0010;
@@ -89,23 +192,29 @@ impl CPU{
             self.registers.Flags = self.registers.Flags & 0b1111_1101;
         }
     }
-
+    
+    //sets interrupt disable flag
     fn setInterruptDisable(&mut self){
         self.registers.Flags = self.registers.Flags | 0b0000_0100;
     }
 
+    //sets decimal mode flag
     fn setDecimalModeFlag(&mut self){
         self.registers.Flags = self.registers.Flags | 0b0000_1000;
     }
+    
 
+    //sets break command flag
     fn setBreakCommand(&mut self){
         self.registers.Flags = self.registers.Flags | 0b0001_0000;
     }
 
+    //sets overflow flag depending on passed condition
     fn setOverflowFlag(&mut self, f: bool){
         self.registers.Flags = self.registers.Flags | 0b0010_0000;
     }
 
+    //sets overflow flag if the MSB of val is 1
     fn setNegativeFlag(&mut self, val: u8){
         if val & 0b1000_0000 != 0 {
             self.registers.Flags = self.registers.Flags | 0b0100_0000;
@@ -114,9 +223,11 @@ impl CPU{
         }
     }
 
+    //gets the next instruction from the code stored in memory
+    //and decodes it to get the appropriate addressing mode
     pub fn fetchAndDecodeInstruction(&mut self) -> Instruction{    
         let opcode = self.readByte();
-        println!("Instruction opcode: {:x}", opcode);
+        //println!("Instruction opcode: {:x}", opcode);
         match opcode {
             //LDA
             0xA9 => return Instruction::LDA(Mode::Immediate),
@@ -323,25 +434,34 @@ impl CPU{
             }
         }
     }
+
+    //reads a single byte using the PC register to index
+    //increments PC and returns the value read at that location
     pub fn readByte(&mut self) -> u8 {
         let b = self.program[self.registers.PC as usize];
         self.registers.PC+=1;
         return b    
     }    
 
+    //reads a single short (as little endian) using the PC register to index
+    //increments PC and returns the value read at the location
+    //in big endian format
     pub fn readShort(&mut self) -> u16 {
         let low = self.program[self.registers.PC as usize] as u16;
         let high = self.program[(self.registers.PC+1) as usize] as u16;
         self.registers.PC+=2;
         return (high << 8) | (low as u16)
     }    
+   
+    //pushed a byte to the stack adding 1 to SP
     fn stackPushByte(&mut self, value: u8){
-        //write the value to stack+SP
+        //write the value to stack-SP
         self.memory.memoryWriteByte(self.STACK-(self.registers.SP as u16), value); 
         //subtract 1 from the stack pointer
         self.registers.SP = self.registers.SP.wrapping_add(1);
     }
 
+    //pushes a short to the stack in little endian format
     fn stackPushShort(&mut self, value: u16){
         let hi = (value >> 8) as u8;
         let low = (value & 0xff) as u8;
@@ -349,8 +469,8 @@ impl CPU{
         self.stackPushByte(low);
     }
 
+    //pops a byte from the stack and returns it while subtracting 1 from SP
     fn stackPopByte(&mut self) -> u8{
-        //read byte from stack
         let val = self.memory.memoryReadByte(self.STACK-(self.registers.SP as u16));
         //add 1 to stack pointer
         self.registers.SP = self.registers.SP.wrapping_sub(1);
@@ -358,12 +478,13 @@ impl CPU{
         val
     }
 
+    //pops a short from the stack and returns it
     fn stackPopShort(&mut self) -> u16{
         let l = self.stackPopByte() as u16;
         let h = self.stackPopByte() as u16; 
         return h<<8 | l
-
     }
+
     //calls the mode specific function depending on whatever mode is passed
     fn modeHandler(&mut self, mode : Mode) -> u16{
         match mode {
@@ -389,11 +510,14 @@ impl CPU{
     fn ImmediateHandler(&mut self) -> u8{
         self.readByte()
     }      
-    //reads byte at memory address specified
+
+    //reads next 
     fn ZeroPageHandler(&mut self) -> u16{
         let mut next = self.readByte();
         next as u16
     }
+    
+    //returns 
     fn ZeroPageXHandler(&mut self) -> u16{
         let mut next = self.readByte() as u16;
         next.wrapping_add(self.registers.X as u16)
@@ -444,6 +568,7 @@ impl CPU{
         memVal
     }
 
+    
     fn LDA(&mut self, mode: Mode){
         //reads 1 or two bytes
         let address = self.modeHandler(mode);
@@ -874,6 +999,7 @@ impl CPU{
         self.registers.PC = self.stackPopShort();
     }
 
+    //executes instruction passed and updates all the registers
     pub fn executeInstruction(&mut self, inst: Instruction) {
         match inst{
             Instruction::LDA(mode) => self.LDA(mode),
@@ -945,10 +1071,10 @@ impl CPU{
         }
     }
     
-    pub fn runWithCallbacak<F>(&mut self, mut callback: F)
-    where
-        F: FnMut(&mut CPU),
-    {
-        let ref opcodes: HashMap<u8, &
-    }
+   // pub fn runWithCallbacak<F>(&mut self, mut callback: F)
+   // where
+   //     F: FnMut(&mut CPU),
+   // {
+   //     let ref opcodes: HashMap<u8, &
+   // }
 }
